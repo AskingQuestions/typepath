@@ -22,10 +22,11 @@ type ReplaceAllStringsInArray<T extends any[], X> = {
 type Merge<T> = T extends object ? { [K in keyof T]: Merge<T[K]> } : T;
 
 // Parse route template with dynamic `:xyz` segments
+type VarChar = ":" | "...";
 type ParseRoute<T extends string> =
-  T extends `${infer Static}:${infer Param}/${infer Rest}`
+  T extends `${infer Static}${VarChar}${infer Param}/${infer Rest}`
     ? `${Static}\${${Param}}/${ParseRoute<Rest>}`
-    : T extends `${infer Static}:${infer Param}`
+    : T extends `${infer Static}${VarChar}${infer Param}`
     ? `${Static}\${${Param}}`
     : T;
 
@@ -39,9 +40,9 @@ type ReplaceDynamicSegments<T extends string> =
 
 // Convert route params into an object with keys
 type ParamsFromRoute<T extends string> =
-  T extends `${string}:${infer Param}/${infer Rest}`
+  T extends `${string}${VarChar}${infer Param}/${infer Rest}`
     ? { [K in Param]: string } & ParamsFromRoute<`/${Rest}`>
-    : T extends `${string}:${infer Param}`
+    : T extends `${string}${VarChar}${infer Param}`
     ? { [K in Param]: string }
     : {};
 
@@ -52,82 +53,103 @@ export type Common = {
   request: Request;
 };
 
-const generateMethods = <Extras>() => ({
+const generateMethods = <Extras>(inject: {}) => ({
   get: <Ctx, T extends any>(handler: (ctx: Ctx & Extras) => T) =>
     ({
       handler,
+      ...inject,
       method: "get",
     } as const),
   post: <Ctx, T extends any>(handler: (ctx: Ctx & Extras) => T) =>
     ({
       handler,
+      ...inject,
       method: "post",
     } as const),
   put: <Ctx, T extends any>(handler: (ctx: Ctx & Extras) => T) =>
     ({
       handler,
+      ...inject,
       method: "put",
     } as const),
   delete: <Ctx, T extends any>(handler: (ctx: Ctx & Extras) => T) =>
     ({
       handler,
+      ...inject,
       method: "delete",
     } as const),
   patch: <Ctx, T extends any>(handler: (ctx: Ctx & Extras) => T) =>
     ({
       handler,
+      ...inject,
       method: "patch",
     } as const),
   options: <Ctx, T extends any>(handler: (ctx: Ctx & Extras) => T) =>
     ({
       handler,
+      ...inject,
       method: "options",
     } as const),
   head: <Ctx, T extends any>(handler: (ctx: Ctx & Extras) => T) =>
     ({
       handler,
+      ...inject,
       method: "head",
     } as const),
 });
 
-const generateParams = <Extras>() => ({
+const generateParams = <Extras>(inject: {}) => ({
   params: <
     Schema extends Record<string, ZodTypeAny>,
     X extends { [K in keyof Schema]: ZodInfer<Schema[K]> }
   >(
     schema: Schema
   ) => {
+    inject = {
+      ...inject,
+      params: schema,
+    };
     return {
-      ...generateMethods<{ params: X } & Extras>(),
-      ...generateSearchParams<{ params: X } & Extras>(),
-      ...generateBody<{ params: X } & Extras>(),
+      ...generateMethods<{ params: X } & Extras>(inject),
+      ...generateSearchParams<{ params: X } & Extras>(inject),
+      ...generateBody<{ params: X } & Extras>(inject),
     };
   },
 });
-const generateSearchParams = <Extras>() => ({
+const generateSearchParams = <Extras>(inject: {}) => ({
   searchParams: <
     Schema extends Record<string, ZodTypeAny>,
     X extends { [K in keyof Schema]?: ZodInfer<Schema[K]> }
   >(
     schema: Schema
   ) => {
+    inject = {
+      ...inject,
+      searchParams: schema,
+    };
     return {
-      ...generateMethods<{ searchParams: X } & Extras>(),
-      ...generateBody<{ searchParams: X } & Extras>(),
+      ...generateMethods<{ search: X } & Extras>(inject),
+      ...generateBody<{ search: X } & Extras>(inject),
     };
   },
 });
-const generateBody = <Extras>() => ({
-  body: <Schema extends ZodTypeAny>(schema: Schema) => ({
-    ...generateMethods<{ body: ZodInfer<Schema> } & Extras>(),
-  }),
+const generateBody = <Extras>(inject: {}) => ({
+  body: <Schema extends ZodTypeAny>(schema: Schema) => {
+    inject = {
+      ...inject,
+      body: schema,
+    };
+    return {
+      ...generateMethods<{ body: ZodInfer<Schema> } & Extras>(inject),
+    };
+  },
 });
 
-export const generate = <Extras>() => ({
-  ...generateMethods<Extras>(),
-  ...generateParams<Extras>(),
-  ...generateSearchParams<Extras>(),
-  ...generateBody<Extras>(),
+export const generate = <Extras>(inject: {}) => ({
+  ...generateMethods<Extras>(inject),
+  ...generateParams<Extras>(inject),
+  ...generateSearchParams<Extras>(inject),
+  ...generateBody<Extras>(inject),
 });
 
 type Methods = "get" | "post" | "put" | "delete" | "patch" | "options" | "head";
@@ -142,7 +164,7 @@ export const {
   params,
   searchParams,
   body,
-} = generate<{}>();
+} = generate<{}>({});
 
 type FilterMethods<Route, M extends Methods> = Route extends Array<any>
   ? Route[number] extends {
@@ -289,9 +311,9 @@ type ConvertFromUnionToOverload<T> = UnionToIntersection<
 
 type BaseRouterMethods = {
   handle(req: Request): Promise<Response>;
-  listen(opts?: { port?: number; transformer: Transformer }): {
+  listen(opts?: { port?: number; transformer?: Transformer }): Promise<{
     close: () => void;
-  };
+  }>;
 };
 
 type CommonRoutes<Routes, Context> = {
@@ -305,6 +327,7 @@ type CommonRoutes<Routes, Context> = {
                 handler: (
                   ctx: Ctx & {
                     rawParams: Merge<ParamsFromRoute<K>>;
+                    rawSearch: Record<string, any>;
                   } & Context
                 ) => Rtn;
                 method: M;
@@ -318,6 +341,7 @@ type CommonRoutes<Routes, Context> = {
                 handler: (
                   ctx: Ctx & {
                     rawParams: Merge<ParamsFromRoute<K>>;
+                    rawSearch: Record<string, any>;
                   } & Context
                 ) => Rtn;
                 method: M;
@@ -327,18 +351,122 @@ type CommonRoutes<Routes, Context> = {
 };
 
 interface Transformer {
-  serialize: (input: any) => any;
-  deserialize: (input: any) => any;
+  stringify: (input: any) => string;
+  parse: (input: string) => any;
 }
+
+type RequestInitSlim = Omit<RequestInit, "body" | "method" | "headers">;
 
 export function client<
   T extends { routeDefinition: CommonRoutes<Routes, {}> },
   Routes = T["routeDefinition"]
->(opts?: { fetch?: typeof fetch; transformer?: Transformer }) {
+>(opts?: {
+  baseUrl?: string;
+  headers?:
+    | Record<string, string>
+    | (() => Promise<Record<string, string>> | Record<string, string>);
+  fetch?: typeof fetch;
+  fetchOptions?: RequestInitSlim | (() => Promise<RequestInitSlim>);
+  transformer?: Transformer;
+}) {
   const { transformer = superjson } = opts ?? {};
   const ftch = opts?.fetch ?? fetch;
 
-  return null as unknown as {
+  const generateMethodHandler = (method: Methods): any => {
+    return async (path: string, body?: any, callOpts?: any) => {
+      if (method == "get" || method == "head" || method == "options") {
+        callOpts = body;
+        body = undefined;
+      }
+
+      const url = new URL(path, opts?.baseUrl ?? "http://localhost");
+
+      for (let k of Object.keys(callOpts?.search ?? {})) {
+        url.searchParams.append(k, callOpts.search[k]);
+      }
+
+      let encodedBody = null;
+      let contentType = null;
+
+      if (
+        body instanceof FormData ||
+        body instanceof URLSearchParams ||
+        body instanceof Blob ||
+        body instanceof ArrayBuffer ||
+        body instanceof ReadableStream
+      ) {
+        encodedBody = body;
+
+        if (body instanceof FormData) {
+          contentType = "multipart/form-data";
+        } else if (body instanceof URLSearchParams) {
+          contentType = "application/x-www-form-urlencoded";
+        } else if (body instanceof Blob) {
+          contentType = body.type;
+        } else if (body instanceof ArrayBuffer) {
+          contentType = "application/octet-stream";
+        } else if (body instanceof ReadableStream) {
+          contentType = "application/octet-stream";
+        } else {
+          contentType = "application/octet-stream";
+        }
+      } else if (body) {
+        encodedBody = JSON.stringify(body);
+        contentType = "application/json";
+      }
+
+      let headers = opts?.headers
+        ? typeof opts.headers == "function"
+          ? await opts.headers()
+          : opts.headers
+        : {};
+
+      if (callOpts?.headers) {
+        headers = {
+          ...headers,
+          ...callOpts.headers,
+        };
+      }
+
+      let fetchOptions = opts?.fetchOptions
+        ? typeof opts.fetchOptions == "function"
+          ? await opts.fetchOptions()
+          : opts.fetchOptions
+        : {};
+
+      if (callOpts?.fetchOptions) {
+        fetchOptions = {
+          ...fetchOptions,
+          ...callOpts.fetchOptions,
+        };
+      }
+
+      return await ftch(url.toString(), {
+        ...fetchOptions,
+        method: method.toUpperCase(),
+        ...(encodedBody ? { body: encodedBody } : {}),
+        headers: {
+          ...(contentType ? { "Content-Type": contentType } : {}),
+          ...headers,
+        },
+      }).then(async (res) => {
+        const data = await res.text();
+        return transformer.parse(data);
+      });
+    };
+  };
+
+  const methods = {
+    get: generateMethodHandler("get"),
+    post: generateMethodHandler("post"),
+    put: generateMethodHandler("put"),
+    delete: generateMethodHandler("delete"),
+    patch: generateMethodHandler("patch"),
+    options: generateMethodHandler("options"),
+    head: generateMethodHandler("head"),
+  };
+
+  return methods as {
     [K in Methods]: Routes extends CommonRoutes<Routes, any>
       ? CleanOverloads<{}, K, Routes, true, false>
       : never;
@@ -355,7 +483,13 @@ function routerInternal<
   [K in Methods]: CleanOverloads<Context, K, Routes, false, true>;
 } & { routeDefinition: Routes } & BaseRouterMethods {
   const extractRoutes = (m: Methods) => {
-    const list: { path: string; handler: (c: any) => any }[] = [];
+    const list: {
+      path: string;
+      body?: ZodTypeAny;
+      searchParams?: Record<string, ZodTypeAny>;
+      params?: Record<string, ZodTypeAny>;
+      handler: (c: any) => any;
+    }[] = [];
 
     const keys = Object.keys(routes);
     for (let k of keys) {
@@ -365,6 +499,9 @@ function routerInternal<
         if (match) {
           list.push({
             path: k,
+            body: match.body,
+            searchParams: match.searchParams,
+            params: match.params,
             handler: match.handler,
           });
         }
@@ -372,6 +509,9 @@ function routerInternal<
         if (v.method == m) {
           list.push({
             path: k,
+            body: v.body,
+            searchParams: v.searchParams,
+            params: v.params,
             handler: v.handler,
           });
         }
@@ -380,6 +520,11 @@ function routerInternal<
 
     type Node = {
       handler?: (c: any) => any;
+      parsers?: {
+        body?: ZodTypeAny;
+        searchParams?: Record<string, ZodTypeAny>;
+        params?: Record<string, ZodTypeAny>;
+      };
       children: Record<string, Node>;
     };
 
@@ -405,6 +550,17 @@ function routerInternal<
 
         if (last) {
           subnode.handler = item.handler;
+          subnode.parsers = {};
+
+          if (item.searchParams) {
+            subnode.parsers.searchParams = item.searchParams;
+          }
+          if (item.params) {
+            subnode.parsers.params = item.params;
+          }
+          if (item.body) {
+            subnode.parsers.body = item.body;
+          }
         }
 
         pointer = subnode;
@@ -433,38 +589,152 @@ function routerInternal<
     }
     if (path == "" || path == "/") {
       if (rootNode.handler) {
-        return rootNode.handler;
+        return {
+          handler: rootNode.handler,
+          parsers: rootNode.parsers,
+          collectedParams: {},
+          depth: 0,
+          handlerPath: "/",
+        };
       }
 
       throw new Error("Path not found " + path);
     }
 
-    let node = rootNode;
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
+    const explore = (
+      handlerPath: string,
+      node: any,
+      depth: number,
+      parts: string[],
+      collectedParams: {} = {}
+    ) => {
+      if (depth == parts.length) {
+        if (node.handler) {
+          return {
+            handler: node.handler,
+            parsers: node.parsers,
+            collectedParams,
+            depth: depth,
+            handlerPath,
+          };
+        } else {
+          throw new Error("Path not found " + path);
+        }
+      }
+
+      const part = parts[depth];
 
       if (node.children[part]) {
-        node = node.children[part];
-        if (i == parts.length - 1) {
-          return node.handler;
-        }
-      } else {
-        // let mostSpecific = null;
-        // for (let c of Object.keys(node.children)) {
-        //   if (c.startsWith(":")) {
-        //     try {
-
-        //     }
-        //   }
-
-        // }
-
-        throw new Error("Path not found " + path);
+        try {
+          return explore(
+            handlerPath + "/" + part,
+            node.children[part],
+            depth + 1,
+            parts,
+            collectedParams
+          );
+        } catch (e) {}
       }
-    }
+
+      for (let c of Object.keys(node.children)) {
+        if (c.startsWith(":")) {
+          try {
+            return explore(
+              handlerPath + "/" + c,
+              node.children[c],
+              depth + 1,
+              parts,
+              {
+                ...collectedParams,
+                [c.slice(1)]: part,
+              }
+            );
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+
+      // Try to find a ...
+      for (let c of Object.keys(node.children)) {
+        if (c.startsWith("...")) {
+          // Collect all remaining parts and find matching handler
+          const remainingParts = parts.slice(depth);
+          const remainingPath = remainingParts.join("/");
+          return {
+            handler: node.children[c].handler,
+            parsers: node.children[c].parsers,
+            collectedParams: {
+              ...collectedParams,
+              [c.slice(3)]: remainingPath,
+            },
+            depth: depth + remainingParts.length,
+            handlerPath: handlerPath + "/" + c,
+          };
+        }
+      }
+
+      throw new Error("Path not found " + path);
+    };
+
+    let node = rootNode;
+    return explore("", node, 0, parts, {});
   };
 
-  const generateMethodHandler = (method: Methods): any => {};
+  const generateMethodHandler = (method: Methods): any => {
+    return (path: string, body?: any, opts?: any) => {
+      if (method == "get" || method == "head" || method == "options") {
+        opts = body;
+        body = undefined;
+      }
+
+      const url = new URL(path, "http://localhost");
+      const pathname = url.pathname;
+      const { handler, parsers, collectedParams } = routeMethod(
+        method,
+        pathname
+      );
+
+      const search = {
+        ...Object.fromEntries(url.searchParams.entries()),
+        ...opts?.search,
+      };
+
+      let parsedBody = null;
+      if (body && parsers?.body) {
+        parsedBody = parsers.body.parse(body);
+      }
+
+      let parsedParams: Record<string, any> | null = null;
+      if (parsers?.params) {
+        parsedParams = {};
+        for (let k of Object.keys(parsers.params)) {
+          parsedParams[k] = parsers.params[k].parse(
+            (collectedParams as any)[k]
+          );
+        }
+      }
+
+      let parsedSearch: Record<string, any> | null = null;
+      if (parsers?.searchParams) {
+        parsedSearch = {};
+        for (let k of Object.keys(parsers.searchParams)) {
+          parsedSearch[k] = parsers.searchParams[k].parse(search[k]);
+        }
+      }
+
+      const ctx = {
+        rawParams: collectedParams,
+        rawSearch: search,
+        ...(opts?.context ?? {}),
+        ...(parsedBody ? { body: parsedBody } : {}),
+        ...(parsedParams ? { params: parsedParams } : {}),
+        ...(parsedSearch ? { search: parsedSearch } : {}),
+      };
+
+      return handler(ctx);
+    };
+  };
 
   const methods = {
     get: generateMethodHandler("get"),
@@ -476,24 +746,90 @@ function routerInternal<
     head: generateMethodHandler("head"),
   };
 
-  console.log(methodRoutes);
-  console.log(routeMethod("post", "/test"));
+  const handle = async (req: Request) => {
+    const url = new URL(req.url, "http://localhost");
+    const method = req.method.toLowerCase() as Methods;
+
+    if (!methodRoutes[method]) {
+      throw new Error("Method not allowed " + method);
+    }
+
+    const path = url.pathname;
+    const { handler, parsers, collectedParams } = routeMethod(method, path);
+
+    const search = Object.fromEntries(url.searchParams.entries());
+
+    let body = null;
+    if (req.body) {
+      const bodyBuffer = await req.arrayBuffer();
+      const bodyString = new TextDecoder().decode(bodyBuffer);
+      body = JSON.parse(bodyString);
+    }
+
+    let parsedBody = null;
+    if (body && parsers?.body) {
+      parsedBody = parsers.body.parse(body);
+    }
+
+    let parsedParams: Record<string, any> | null = null;
+    if (parsers?.params) {
+      parsedParams = {};
+      for (let k of Object.keys(parsers.params)) {
+        parsedParams[k] = parsers.params[k].parse((collectedParams as any)[k]);
+      }
+    }
+
+    let parsedSearch: Record<string, any> | null = null;
+    if (parsers?.searchParams) {
+      parsedSearch = {};
+      for (let k of Object.keys(parsers.searchParams)) {
+        parsedSearch[k] = parsers.searchParams[k].parse(search[k]);
+      }
+    }
+
+    const ctx = {
+      rawParams: collectedParams,
+      rawSearch: search,
+      request: req,
+      ...(parsedBody ? { body: parsedBody } : {}),
+      ...(parsedParams ? { params: parsedParams } : {}),
+      ...(parsedSearch ? { search: parsedSearch } : {}),
+    };
+
+    return handler(ctx);
+  };
 
   return {
     routeDefinition: routes,
     ...methods,
-    handle: async (req: Request) => {
-      const url = new URL(req.url);
-
-      const method = req.method.toLowerCase();
-
-      return new Response("OK");
-    },
-    listen: (opts?: { port?: number; transformer?: Transformer }) => {
+    handle,
+    listen: async (opts?: { port?: number; transformer?: Transformer }) => {
       const { port = 8080, transformer = superjson } = opts ?? {};
 
+      const http = await import("http");
+      const server = http.createServer((req, res) => {
+        const url = new URL(req.url ?? "/", "http://localhost");
+        const request = new Request(url, {
+          method: req.method,
+          headers: req.headers as any,
+          body:
+            req.method == "GET" ||
+            req.method == "HEAD" ||
+            req.method == "OPTIONS"
+              ? null
+              : (req as any),
+        });
+        handle(request).then((result) => {
+          res.end(transformer.stringify(result));
+        });
+      });
+
+      server.listen(port);
+
       return {
-        close: () => {},
+        close: () => {
+          server.close();
+        },
       };
     },
   };
