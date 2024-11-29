@@ -8,7 +8,16 @@ globalThis.console = new console.Console({
 
 import test from "node:test";
 import { equal, throws } from "node:assert";
-import { body, client, get, params, post, router, searchParams } from ".";
+import {
+  body,
+  client,
+  get,
+  makeGuard,
+  params,
+  post,
+  router,
+  searchParams,
+} from "./index";
 import { z } from "zod";
 
 test("router", (t) => {
@@ -77,18 +86,105 @@ test("search", (t) => {
   equal(r.get("/search?q=test"), "test");
 });
 
+test("guard", async (t) => {
+  const guard = makeGuard((ctx) => {
+    if (ctx.params.id !== "123") {
+      throw new Error("Not found");
+    }
+  });
+  const guardPromise = makeGuard(async (ctx) => {
+    if (ctx.params.id !== "123") {
+      throw new Error("Not found");
+    }
+  });
+  const guardValue = makeGuard((ctx) => ({ guarded: true }));
+
+  const multiGuard1 = makeGuard((ctx) => {
+    return { a: 1 };
+  });
+
+  const multiGuard2 = makeGuard((ctx) => {
+    return { b: 2 };
+  });
+
+  const r = router({
+    "/user/:id": params({ id: z.string() }).get(
+      guard((ctx) => "test" as const)
+    ),
+    "/promise/:id": params({ id: z.string() }).get(
+      guardPromise((ctx) => "test" as const)
+    ),
+    "/value/:id": params({ id: z.string() }).get(
+      guardValue((ctx) => ctx.guarded)
+    ),
+    "/multi": get(
+      multiGuard1(
+        multiGuard2((ctx) => {
+          return ctx.a + ctx.b;
+        })
+      )
+    ),
+  });
+
+  equal(r.get("/user/123"), "test");
+  throws(() => r.get("/user/124"));
+  const res = r.get("/promise/123");
+  equal(res instanceof Promise, true);
+  equal(await res, "test");
+  equal(r.get("/value/123"), true);
+  equal(r.get("/multi"), 3);
+});
+
 test("client", async (t) => {
   const app = router({
     "/": get((ctx) => "hello"),
     "/time": get((ctx) => new Date()),
+    "/body": body(z.string()).post((ctx) => ctx.body),
+    "/params/:id": params({ id: z.string() }).get((ctx) => ctx.params.id),
+    "/search": searchParams({ q: z.string() }).get((ctx) => ctx.search.q),
   });
 
-  app.listen({ port: 8081 });
+  const server = await app.listen({ port: 8081 });
+  try {
+    const c = client<typeof app>({
+      baseUrl: "http://localhost:8081",
+    });
 
-  const c = client<typeof app>({
-    baseUrl: "http://localhost:8081",
+    equal(await c.get("/"), "hello");
+    equal((await c.get("/time")) instanceof Date, true);
+    equal(await c.post("/body", "test"), "test");
+
+    equal(await c.get("/params/123"), "123");
+    equal(await c.get("/search?q=abc"), "abc");
+  } catch (e) {
+    throw e;
+  } finally {
+    await server.close();
+  }
+});
+
+test("binary", async (t) => {
+  const app = router({
+    "/": post((ctx) => {
+      if (ctx.rawBody instanceof ArrayBuffer) {
+        return new Uint8Array(ctx.rawBody)[0] === 1;
+      }
+
+      return false;
+    }),
   });
 
-  equal(await c.get("/"), "hello");
-  equal((await c.get("/time")) instanceof Date, true);
+  const server = await app.listen({ port: 8082 });
+  try {
+    const c = client<typeof app>({
+      baseUrl: "http://localhost:8082",
+    });
+
+    equal(await c.post("/", new Uint8Array([1])), true);
+    equal(app.post("/", new Uint8Array([1]).buffer), true);
+  } catch (e) {
+    throw e;
+  } finally {
+    await server.close();
+  }
 });

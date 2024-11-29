@@ -46,6 +46,9 @@ type ParamsFromRoute<T extends string> =
     ? { [K in Param]: string }
     : {};
 
+export const methodCanHaveBody = (method: string) =>
+  !["GET", "OPTIONS", "HEAD", "TRACE"].includes(method.toUpperCase());
+
 /**
  * Shared context for all routes
  */
@@ -95,6 +98,12 @@ const generateMethods = <Extras>(inject: {}) => ({
       handler,
       ...inject,
       method: "head",
+    } as const),
+  any: <Ctx, T extends any>(handler: (ctx: Ctx & Extras) => T) =>
+    ({
+      handler,
+      ...inject,
+      method: "any",
     } as const),
 });
 
@@ -164,6 +173,7 @@ export const {
   params,
   searchParams,
   body,
+  any,
 } = generate<{}>({});
 
 type FilterMethods<Route, M extends Methods> = Route extends Array<any>
@@ -173,6 +183,8 @@ type FilterMethods<Route, M extends Methods> = Route extends Array<any>
     }
     ? SM extends M
       ? Route[number]
+      : SM extends "any"
+      ? Route[number]
       : never
     : never
   : Route extends {
@@ -180,6 +192,8 @@ type FilterMethods<Route, M extends Methods> = Route extends Array<any>
       handler: (ctx: any) => any;
     }
   ? SM extends M
+    ? Route
+    : SM extends "any"
     ? Route
     : never
   : never;
@@ -195,7 +209,12 @@ type GenerateCaller<
   SearchParamsObject = Ctx extends { searchParams: infer SP }
     ? { search?: SP }
     : {},
-  ContextObject = IncludeContextOption extends true ? { context?: Context } : {}
+  ContextObject = IncludeContextOption extends true
+    ? { context?: Context }
+    : {
+        headers?: Record<string, string>;
+        fetchOptions?: RequestInitSlim;
+      }
 > = M extends "get" | "head" | "options" | "connect"
   ?
       | ((
@@ -250,7 +269,7 @@ type CleanOverloads<
           method: infer SM;
           handler: infer H;
         }
-        ? SM extends M
+        ? SM extends M | "any"
           ? H extends (ctx: infer Ctx) => infer Rtn
             ? GenerateCaller<
                 M,
@@ -328,6 +347,7 @@ type CommonRoutes<Routes, Context> = {
                   ctx: Ctx & {
                     rawParams: Merge<ParamsFromRoute<K>>;
                     rawSearch: Record<string, any>;
+                    rawBody: any;
                   } & Context
                 ) => Rtn;
                 method: M;
@@ -342,6 +362,7 @@ type CommonRoutes<Routes, Context> = {
                   ctx: Ctx & {
                     rawParams: Merge<ParamsFromRoute<K>>;
                     rawSearch: Record<string, any>;
+                    rawBody: any;
                   } & Context
                 ) => Rtn;
                 method: M;
@@ -357,11 +378,42 @@ interface Transformer {
 
 type RequestInitSlim = Omit<RequestInit, "body" | "method" | "headers">;
 
+/**
+ * Create a client for a router
+ *
+ * ```ts
+ * const r = router({
+ *  "/": get(() => "hello"),
+ * });
+ *
+ * type Routes = typeof r;
+ *
+ * const c = client<Routes>();
+ *
+ * await c.get("/"); // "hello"
+ * ```
+ *
+ * ```ts
+ * // Passing request options
+ *
+ * const c = client<Routes>({
+ *  baseUrl: "https://api.example.com",
+ *  headers: async () => ({ Authorization: await getAuthToken() }),
+ *  // fetch: customFetchFunction
+ *  // fetchOptions: { mode: "cors" }
+ * });
+ *
+ * await c.get("/", {
+ *  headers: { "X-Custom-Header": "value" },
+ * });
+ *
+ * ```
+ */
 export function client<
   T extends { routeDefinition: CommonRoutes<Routes, {}> },
   Routes = T["routeDefinition"]
 >(opts?: {
-  baseUrl?: string;
+  baseUrl?: string | (() => Promise<string> | string);
   headers?:
     | Record<string, string>
     | (() => Promise<Record<string, string>> | Record<string, string>);
@@ -374,12 +426,18 @@ export function client<
 
   const generateMethodHandler = (method: Methods): any => {
     return async (path: string, body?: any, callOpts?: any) => {
-      if (method == "get" || method == "head" || method == "options") {
+      if (!methodCanHaveBody(method)) {
         callOpts = body;
         body = undefined;
       }
 
-      const url = new URL(path, opts?.baseUrl ?? "http://localhost");
+      const baseUrl = opts?.baseUrl
+        ? typeof opts.baseUrl == "function"
+          ? await opts.baseUrl()
+          : opts.baseUrl
+        : "http://localhost";
+
+      const url = new URL(path, baseUrl);
 
       for (let k of Object.keys(callOpts?.search ?? {})) {
         url.searchParams.append(k, callOpts.search[k]);
@@ -393,7 +451,15 @@ export function client<
         body instanceof URLSearchParams ||
         body instanceof Blob ||
         body instanceof ArrayBuffer ||
-        body instanceof ReadableStream
+        body instanceof ReadableStream ||
+        body instanceof Uint8Array ||
+        body instanceof Uint16Array ||
+        body instanceof Uint32Array ||
+        body instanceof Int8Array ||
+        body instanceof Int16Array ||
+        body instanceof Int32Array ||
+        body instanceof Float32Array ||
+        body instanceof Float64Array
       ) {
         encodedBody = body;
 
@@ -451,6 +517,7 @@ export function client<
         },
       }).then(async (res) => {
         const data = await res.text();
+
         return transformer.parse(data);
       });
     };
@@ -598,7 +665,7 @@ function routerInternal<
         };
       }
 
-      throw new Error("Path not found " + path);
+      throw status(404, "Not found");
     }
 
     const explore = (
@@ -618,7 +685,7 @@ function routerInternal<
             handlerPath,
           };
         } else {
-          throw new Error("Path not found " + path);
+          throw status(404, "Not found");
         }
       }
 
@@ -674,7 +741,7 @@ function routerInternal<
         }
       }
 
-      throw new Error("Path not found " + path);
+      throw status(404, "Not found");
     };
 
     let node = rootNode;
@@ -683,7 +750,7 @@ function routerInternal<
 
   const generateMethodHandler = (method: Methods): any => {
     return (path: string, body?: any, opts?: any) => {
-      if (method == "get" || method == "head" || method == "options") {
+      if (!methodCanHaveBody(method)) {
         opts = body;
         body = undefined;
       }
@@ -726,6 +793,7 @@ function routerInternal<
       const ctx = {
         rawParams: collectedParams,
         rawSearch: search,
+        rawBody: body,
         ...(opts?.context ?? {}),
         ...(parsedBody ? { body: parsedBody } : {}),
         ...(parsedParams ? { params: parsedParams } : {}),
@@ -751,7 +819,7 @@ function routerInternal<
     const method = req.method.toLowerCase() as Methods;
 
     if (!methodRoutes[method]) {
-      throw new Error("Method not allowed " + method);
+      throw status(405, "Method not allowed");
     }
 
     const path = url.pathname;
@@ -760,15 +828,27 @@ function routerInternal<
     const search = Object.fromEntries(url.searchParams.entries());
 
     let body = null;
-    if (req.body) {
+    let rawBody = null;
+    if (req.body && req.headers.get("content-type") == "application/json") {
       const bodyBuffer = await req.arrayBuffer();
       const bodyString = new TextDecoder().decode(bodyBuffer);
+      rawBody = bodyString;
       body = JSON.parse(bodyString);
+    } else if (req.body) {
+      if (req.headers.get("content-type") == "text/plain") {
+        const bodyBuffer = await req.arrayBuffer();
+        const bodyString = new TextDecoder().decode(bodyBuffer);
+        rawBody = bodyString;
+      } else {
+        rawBody = await req.arrayBuffer();
+      }
     }
 
     let parsedBody = null;
     if (body && parsers?.body) {
       parsedBody = parsers.body.parse(body);
+    } else if (parsers?.body && !body) {
+      throw status(400, "Body required (application/json)");
     }
 
     let parsedParams: Record<string, any> | null = null;
@@ -790,6 +870,7 @@ function routerInternal<
     const ctx = {
       rawParams: collectedParams,
       rawSearch: search,
+      rawBody,
       request: req,
       ...(parsedBody ? { body: parsedBody } : {}),
       ...(parsedParams ? { params: parsedParams } : {}),
@@ -807,21 +888,42 @@ function routerInternal<
       const { port = 8080, transformer = superjson } = opts ?? {};
 
       const http = await import("http");
-      const server = http.createServer((req, res) => {
-        const url = new URL(req.url ?? "/", "http://localhost");
-        const request = new Request(url, {
-          method: req.method,
-          headers: req.headers as any,
-          body:
-            req.method == "GET" ||
-            req.method == "HEAD" ||
-            req.method == "OPTIONS"
-              ? null
-              : (req as any),
+      const server = http.createServer(async (incomingMessage, res) => {
+        const { method } = incomingMessage;
+        const url = new URL(incomingMessage.url ?? "/", "http://localhost");
+
+        // Extract the body if present
+        const body = await new Promise((resolve, reject) => {
+          let body: any[] = [];
+          incomingMessage.on("data", (chunk) => body.push(chunk));
+          incomingMessage.on("end", () =>
+            resolve(Buffer.concat(body).toString())
+          );
+          incomingMessage.on("error", reject);
         });
-        handle(request).then((result) => {
-          res.end(transformer.stringify(result));
+        const headers = new Headers();
+        for (const [key, value] of Object.entries(incomingMessage.headers)) {
+          headers.set(key, value as string);
+        }
+
+        const req = new Request(url, {
+          method,
+          headers,
+          body: methodCanHaveBody(method ?? "GET") ? body : undefined,
         });
+        handle(req)
+          .then((result) => {
+            res.end(transformer.stringify(result));
+          })
+          .catch((e) => {
+            if (e instanceof TypePathStatusError) {
+              res.statusCode = e.status;
+              res.end(e.message);
+            } else {
+              res.statusCode = 500;
+              res.end(e.message);
+            }
+          });
       });
 
       server.listen(port);
@@ -835,6 +937,19 @@ function routerInternal<
   };
 }
 
+/**
+ * Create a router factory with a context type
+ *
+ * ```ts
+ * // Define a router with a context type
+ * const wsRouter = withContext<{ ws: WebSocket }>();
+ *
+ * // Create a router instance
+ * const r = wsRouter({ "/": get(() => true) });
+ *
+ * // Passing context to the router
+ * r.get("/", { context: { ws: ... } });
+ */
 export const withContext =
   <Context extends {}>() =>
   <Routes extends CommonRoutes<Routes, Context>>(routes: Routes) =>
@@ -843,6 +958,82 @@ export const withContext =
 export const router = withContext<{
   request: Request;
 }>();
+
+class TypePathStatusError extends Error {
+  constructor(public status: number, public message: string) {
+    super(message);
+  }
+}
+
+/**
+ * Create a status error throwable from a handler
+ *
+ * ```ts
+ * router({
+ *  "/": get(() => {
+ *    throw status(404, "Not found");
+ *   })
+ * })
+ * ```
+ */
+export const status = (code: number, message: string) => {
+  return new TypePathStatusError(code, message);
+};
+
+/**
+ * Create a guard that can be used to validate the request before it reaches the handler
+ *
+ * ```ts
+ * const authGuard = makeGuard(async (ctx) => {
+ *  const user = await auth(ctx.request.headers.get("Authorization"));
+ *  if (!user) {
+ *   throw status(401, "Unauthorized");
+ *  }
+ *
+ *  return { user };
+ * });
+ *
+ * // Usage
+ * const r = router({
+ * "/me/name": get(
+ *   authGuard((ctx) => ctx.user.firstName)
+ *  ),
+ * });
+ */
+export const makeGuard = <
+  X extends Promise<Record<string, any> | void> | Record<string, any> | void
+>(
+  guard: (ctx: {
+    rawParams: Record<string, any>;
+    rawSearch: Record<string, any>;
+    rawBody: any;
+    body?: any;
+    params?: any;
+    search?: any;
+    request: Request;
+  }) => X
+) => {
+  return <T, R>(
+    fn: (ctx: T & Awaited<X>) => R
+  ): ((ctx: T) => X extends Promise<any> ? Promise<R> : R) => {
+    return (ctx: T) => {
+      let res = guard(ctx as any);
+      if (res instanceof Promise) {
+        return res.then(() =>
+          fn({
+            ...ctx,
+            ...res,
+          } as any)
+        ) as any;
+      } else {
+        return fn({
+          ...ctx,
+          ...res,
+        } as any);
+      }
+    };
+  };
+};
 
 // Tests
 () => {
@@ -888,6 +1079,7 @@ export const router = withContext<{
     ).post((ctx) => "/test2/:id" as const),
     "/hi/:abc": [get((ctx) => "/hi/:abc" as const), post(() => false)],
     "/list": get((ctx) => 1),
+    "/any": any((ctx) => 1),
   });
 
   const c = client<typeof r>();
@@ -896,11 +1088,14 @@ export const router = withContext<{
   const res2 = r.get("/test/:id");
   const res3 = r.post(`/test2/${1234}`, { name: "a" });
   const res4 = r.post("/hi/:abc");
+  const res5 = r.head("/any");
+
   r.get("/list?abc=12q3");
 
   const testRes: TypeAssert<typeof res, "/hi/:abc"> = true;
   const testRes2: TypeAssert<typeof res2, "/test/:id"> = true;
   const testRes3: TypeAssert<typeof res3, "/test2/:id"> = true;
   const testRes4: TypeAssert<typeof res4, false> = true;
+  const testRes5: TypeAssert<typeof res5, number> = true;
   const testX: TypeAssert<typeof x, Promise<"/hi/:abc">> = true;
 };
