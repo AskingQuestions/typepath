@@ -13,6 +13,10 @@
 	};
 </script>
 
+<svelte:head>
+	<title>TypePath</title>
+</svelte:head>
+
 <div class="min-h-[100dvh] bg-[#00090B] pb-24">
 	<div class="relative flex min-h-[100dvh] flex-col bg-[#111111] pt-16">
 		<div class="pointer-events-none absolute left-0 right-0 top-0 h-[500px] overflow-clip blur-lg">
