@@ -1,0 +1,51 @@
+---
+title: TypePath - Usage - Cloudflare Workers
+---
+
+<script>
+</script>
+
+# Usage in Cloudflare Workers
+
+
+## Example
+
+```ts
+// index.ts
+
+import { router, get } from 'typepath';
+
+export default {
+	async fetch(request, env, ctx) {
+    const r = await router({
+			'/': get((ctx) => 'Hi'),
+		});
+
+		return r.handle(request);
+	},
+};
+```
+
+## Example with custom context
+
+```ts
+// index.ts
+
+import { withContext, get } from 'typepath';
+
+export const cfRouter = withContext<{ request: Request, env: Env }>();
+
+export default {
+  async fetch(request, env, ctx) {
+    const r = await cfRouter({
+      '/': get((ctx) => {
+        return `Hello, ${ctx.env.ENVIRONMENT}`;
+      }),
+    });
+
+    return r.handle(request, { context: { request, env } });
+  },
+};
+
+
+

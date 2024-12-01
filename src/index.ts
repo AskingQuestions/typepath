@@ -885,65 +885,68 @@ function routerInternal<
     }
   ) => {
     const url = new URL(req.url, "http://localhost");
-    const method = req.method.toLowerCase() as Methods;
+    try {
+      const method = req.method.toLowerCase() as Methods;
 
-    if (!methodRoutes[method]) {
-      throw status(405, "Method not allowed");
-    }
+      if (!methodRoutes[method]) {
+        throw status(405, "Method not allowed");
+      }
 
-    const path = url.pathname;
-    const { handler, parsers, collectedParams } = routeMethod(method, path);
+      const path = url.pathname;
+      const { handler, parsers, collectedParams } = routeMethod(method, path);
 
-    const search = Object.fromEntries(url.searchParams.entries());
+      const search = Object.fromEntries(url.searchParams.entries());
 
-    let body = null;
-    let rawBody = null;
-    if (req.body && req.headers.get("content-type") == "application/json") {
-      const bodyBuffer = await req.arrayBuffer();
-      const bodyString = new TextDecoder().decode(bodyBuffer);
-      rawBody = bodyString;
-      body = JSON.parse(bodyString);
-    } else if (req.body) {
-      if (req.headers.get("content-type") == "text/plain") {
+      let body = null;
+      let rawBody = null;
+      if (req.body && req.headers.get("content-type") == "application/json") {
         const bodyBuffer = await req.arrayBuffer();
         const bodyString = new TextDecoder().decode(bodyBuffer);
         rawBody = bodyString;
-      } else {
-        rawBody = await req.arrayBuffer();
+        body = JSON.parse(bodyString);
+      } else if (req.body) {
+        if (req.headers.get("content-type") == "text/plain") {
+          const bodyBuffer = await req.arrayBuffer();
+          const bodyString = new TextDecoder().decode(bodyBuffer);
+          rawBody = bodyString;
+        } else {
+          rawBody = await req.arrayBuffer();
+        }
       }
-    }
 
-    let parsedBody = null;
-    if (body && parsers?.body) {
-      parsedBody = parsers.body.parse(body);
-    } else if (parsers?.body && !body) {
-      throw status(400, "Body required (application/json)");
-    }
-
-    let parsedParams: Record<string, any> | null = null;
-    if (parsers?.params) {
-      parsedParams = {};
-      for (let k of Object.keys(parsers.params)) {
-        parsedParams[k] = parsers.params[k].parse((collectedParams as any)[k]);
+      let parsedBody = null;
+      if (body && parsers?.body) {
+        parsedBody = parsers.body.parse(body);
+      } else if (parsers?.body && !body) {
+        throw status(400, "Body required (application/json)");
       }
-    }
 
-    let parsedSearch: Record<string, any> | null = null;
-    if (parsers?.searchParams) {
-      parsedSearch = zod.object(parsers.searchParams).parse(search);
-    }
+      let parsedParams: Record<string, any> | null = null;
+      if (parsers?.params) {
+        parsedParams = {};
+        for (let k of Object.keys(parsers.params)) {
+          parsedParams[k] = parsers.params[k].parse(
+            (collectedParams as any)[k]
+          );
+        }
+      }
 
-    const ctx = {
-      rawParams: collectedParams,
-      rawSearch: search,
-      rawBody,
-      request: req,
-      ...(opts?.context ?? {}),
-      ...(parsedBody ? { body: parsedBody } : {}),
-      ...(parsedParams ? { params: parsedParams } : {}),
-      ...(parsedSearch ? { search: parsedSearch } : {}),
-    };
-    try {
+      let parsedSearch: Record<string, any> | null = null;
+      if (parsers?.searchParams) {
+        parsedSearch = zod.object(parsers.searchParams).parse(search);
+      }
+
+      const ctx = {
+        rawParams: collectedParams,
+        rawSearch: search,
+        rawBody,
+        request: req,
+        ...(opts?.context ?? {}),
+        ...(parsedBody ? { body: parsedBody } : {}),
+        ...(parsedParams ? { params: parsedParams } : {}),
+        ...(parsedSearch ? { search: parsedSearch } : {}),
+      };
+
       const output = await handler(ctx);
 
       if (output instanceof Response) {
@@ -974,7 +977,7 @@ function routerInternal<
       } else if (e instanceof ZodError) {
         return new Response(e.toString(), { status: 400 });
       } else {
-        console.error("Received while handling", path, e);
+        console.error("Received while handling", url.pathname, e);
         return new Response("Internal server error", { status: 500 });
       }
     }
@@ -989,63 +992,68 @@ function routerInternal<
     listen: async (opts?: { port?: number }) => {
       const { port = 8080 } = opts ?? {};
 
-      const http = await import("http");
-      const server = http.createServer(async (incomingMessage, res) => {
-        const { method } = incomingMessage;
-        const url = new URL(incomingMessage.url ?? "/", "http://localhost");
+      const importStr = `ht` + `tp`;
+      const http = await import(importStr);
+      const server = http.createServer(
+        async (incomingMessage: any, res: any) => {
+          const { method } = incomingMessage;
+          const url = new URL(incomingMessage.url ?? "/", "http://localhost");
 
-        // Extract the body if present
-        const body = await new Promise((resolve, reject) => {
-          let body: any[] = [];
-          incomingMessage.on("data", (chunk) => body.push(chunk));
-          incomingMessage.on("end", () => resolve(Buffer.concat(body)));
-          incomingMessage.on("error", reject);
-        });
-        const headers = new Headers();
-        for (const [key, value] of Object.entries(incomingMessage.headers)) {
-          headers.set(key, value as string);
-        }
-
-        const req = new Request(url, {
-          method,
-          headers,
-          body: methodCanHaveBody(method ?? "GET") ? body : (undefined as any),
-        });
-        handle(req)
-          .then(async (result) => {
-            res.statusCode = result.status;
-            res.setHeaders(result.headers);
-            // Stream a Response.body to res
-            const reader = result.body?.getReader();
-            if (reader) {
-              const pump = async () => {
-                const { done, value } = await reader.read();
-                if (done) {
-                  res.end();
-                  return;
-                }
-                res.write(value);
-                await pump();
-              };
-              await pump();
-            } else {
-              res.end(await result.text());
-            }
-          })
-          .catch((e) => {
-            if (e instanceof TypePathStatusError) {
-              res.statusCode = e.status;
-              res.end(e.message);
-            } else if (e instanceof ZodError) {
-              res.statusCode = 400;
-              res.end(e.toString());
-            } else {
-              console.error("Error while handling request", e);
-              res.statusCode = 500;
-              res.end("Internal server error");
-            }
+          // Extract the body if present
+          const body = await new Promise((resolve, reject) => {
+            let body: any[] = [];
+            incomingMessage.on("data", (chunk: any) => body.push(chunk));
+            incomingMessage.on("end", () => resolve(Buffer.concat(body)));
+            incomingMessage.on("error", reject);
           });
-      });
+          const headers = new Headers();
+          for (const [key, value] of Object.entries(incomingMessage.headers)) {
+            headers.set(key, value as string);
+          }
+
+          const req = new Request(url, {
+            method,
+            headers,
+            body: methodCanHaveBody(method ?? "GET")
+              ? body
+              : (undefined as any),
+          });
+          handle(req)
+            .then(async (result) => {
+              res.statusCode = result.status;
+              res.setHeaders(result.headers);
+              // Stream a Response.body to res
+              const reader = result.body?.getReader();
+              if (reader) {
+                const pump = async () => {
+                  const { done, value } = await reader.read();
+                  if (done) {
+                    res.end();
+                    return;
+                  }
+                  res.write(value);
+                  await pump();
+                };
+                await pump();
+              } else {
+                res.end(await result.text());
+              }
+            })
+            .catch((e) => {
+              if (e instanceof TypePathStatusError) {
+                res.statusCode = e.status;
+                res.end(e.message);
+              } else if (e instanceof ZodError) {
+                res.statusCode = 400;
+                res.end(e.toString());
+              } else {
+                console.error("Error while handling request", e);
+                res.statusCode = 500;
+                res.end("Internal server error");
+              }
+            });
+        }
+      );
 
       server.listen(port);
 
