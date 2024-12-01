@@ -1,0 +1,26 @@
+---
+title: TypePath - Routing - Catchall
+---
+
+<script>
+</script>
+
+# Catchall Routes
+
+Sometimes you need to match all routes that start with a certain prefix. You can do this by using the `...` operator.
+
+
+## Example
+
+```ts
+const r = router({
+  // ctx will contain a property `slug` of type string inside the ctx.rawParams object
+  "/articles/...slug": get((ctx) => ctx.rawParams.slug)
+});
+
+r.get("/articles/hello/world"); // "hello/world"
+```
+
+## Prioritization
+
+Catchalls are matched last in all cases.

@@ -1,0 +1,215 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@layer components {
+	.panel {
+		@apply relative block rounded-xl border border-gray-600 bg-gray-800 p-8 shadow-xl;
+	}
+}
+
+@layer base {
+	html {
+		@apply text-white;
+	}
+}
+
+.btn {
+	@apply inline-block flex cursor-pointer flex-row items-center justify-center rounded-md border border-gray-600 bg-gray-800 px-4 py-1 shadow-md hover:bg-gray-700;
+
+	svg {
+		@apply mr-2 h-4 w-4;
+	}
+
+	&.btn-primary {
+		@apply border-blue-500 hover:bg-blue-600;
+	}
+	&.btn-success {
+		@apply border-green-500 hover:bg-green-900;
+	}
+
+	&.btn-danger {
+		@apply border-red-500 hover:bg-red-600;
+	}
+
+	&.disabled {
+		@apply cursor-default opacity-50;
+
+		&:hover {
+			@apply bg-gray-800;
+		}
+	}
+}
+
+.input-text {
+	@apply block w-full rounded-md border border-gray-600 bg-gray-800 px-4 py-1 shadow-md hover:bg-gray-700;
+}
+
+.input-group {
+	@apply relative flex flex-row items-center justify-between;
+
+	svg {
+		position: absolute;
+		left: 0.75rem;
+		pointer-events: none;
+		opacity: 0.5;
+	}
+
+	.input-text {
+		@apply pl-10;
+	}
+}
+
+.markdown-body {
+	h1 {
+		font-size: 2em;
+	}
+	h2 {
+		font-size: 1.5em;
+	}
+	h3 {
+		font-size: 1.25em;
+	}
+	h4 {
+		font-size: 1em;
+	}
+	h5 {
+		font-size: 0.875em;
+	}
+	h6 {
+		font-size: 0.85em;
+	}
+
+	h1,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6 {
+		margin-top: 1em;
+		margin-bottom: 0.5em;
+	}
+
+	h1:first-child,
+	h2:first-child,
+	h3:first-child,
+	h4:first-child,
+	h5:first-child,
+	h6:first-child {
+		margin-top: 0;
+	}
+
+	h1:last-child,
+	h2:last-child,
+	h3:last-child,
+	h4:last-child,
+	h5:last-child,
+	h6:last-child {
+		margin-bottom: 0;
+	}
+
+	ul,
+	ol {
+		padding-left: 2em;
+	}
+
+	ul {
+		list-style-type: disc;
+	}
+
+	ol {
+		list-style-type: decimal;
+	}
+
+	ul ul,
+	ul ol,
+	ol ol,
+	ol ul {
+		margin-top: 0;
+		margin-bottom: 0;
+	}
+
+	blockquote {
+		margin: 0;
+		padding-left: 1em;
+		border-left: 0.25em solid #dfe2e5;
+	}
+
+	table {
+		border-collapse: collapse;
+		border-spacing: 0;
+	}
+
+	td,
+	th {
+		padding: 0;
+	}
+
+	hr {
+		height: 0.1em;
+		padding: 0;
+		margin: 18px 0;
+		background-color: #e8e8e8;
+		opacity: 0.2;
+		border: 0;
+	}
+
+	code,
+	kbd,
+	pre,
+	samp {
+		font-family: monospace, monospace;
+		font-size: 1em;
+	}
+
+	:not(pre) > code {
+		padding: 0.2em 0.4em;
+		border-radius: 0.2em;
+		background-color: rgba(27, 31, 35, 0.05);
+		border: 0.1em solid rgba(27, 31, 35, 0.05);
+	}
+
+	pre > code {
+		@apply mt-2 block w-full overflow-x-auto rounded-md bg-gray-800 p-2 text-white;
+	}
+}
+
+/* ===== Scrollbar CSS ===== */
+/* Firefox */
+html {
+	scrollbar-width: auto;
+	scrollbar-color: #5c5c5c #0d0d0d;
+}
+
+/* Chrome, Edge, and Safari */
+html::-webkit-scrollbar {
+	width: 13px;
+}
+
+html::-webkit-scrollbar-track {
+	background: #0d0d0d;
+}
+
+html::-webkit-scrollbar-thumb {
+	background-color: #5c5c5c;
+	border-radius: 10px;
+	border: 3px solid #0d0d0d;
+}
+
+.grid-bg {
+	background-image: url('data:image/webp;base64,UklGRh4DAABXRUJQVlA4TBEDAAAvj8FjAAUs2XbbNgIJgASpZu9/s+3jYZyEoVMQ0X9HaBtJUgrmt+ANc0K2tqeeTTa09sYb2w5Dqey8wdV5k4IDF96548S8ieLAxju3HQYWG4d/QhUtUzISg6ES2Q0YrkJGGQfOZFRwYrKUcGAhIzUcWMbh31YXuHK7NMahil0MZ0rt0hSH0nZpCYeyixWcidulZRyqbuG/fz8pCv+1m0P92j1q1+ZQv3aP+rU71K7No37t2WH8Pg7/mmS4uOyFcSjRXX3A4gD2fRvd9WU2tHH4R4uh9XSKkAZD0XIHhqs+Tk44cF5oqTjxshDhwLLQos0BPA7/1nKgda56aD9hqFpOPeDa9CiGA5ueuuHEepSKA3c9dT1h4NLH4d/L9ufk2Z9vl1D//lxc+3N62WYc/hnDJSKbiMBQLJs4iB9MPmAH8ROwywYPsY3DP/f9kOOG0HU/RP77IXLdD9WXfWwc/r2vnt/Cf81Mjjv8z3FrKmhVTS1JhaFyajdguB7A2QesOHFq2QEsD+CKA+s4/EvkyXeSK99JyZXvJHLlO5Mr30m+fGfy5DuJxuHffOS4ffuz+PLP6tqfZXHtz+ran8W3P6tv87X6590QXNlOYxyq1LPiTMlOUxxK7bSEQ9WzOmxgOy07bFjH4d/76nkh/NfMKPxX1wQX16MyDqXlKDhTrkcVHErqUTMOVY7yMhv6OPxbXte/eHlZ/+Lb3vey/sW3g8HXn/Vr9W+y+jC/Lo9Ozjy6r3+xL4/+sv7Ft4znOPwrWeES7iw4VM79BowXd2YHE/cbk+PbdH6ZDWUc/oX/fZh/UfRhjuP7MM9Hzmg+cnjf85zqVPVhnpDfOczH74DeV88L4b9mRuG/5uN/8L/n60SYq3VUzMc6Q+ZjHS7TsU6d8L8P8498H+bwvw/zfLyn2Tf2Peam8T3/5uM9GOfjPTHD/xz3b2CF/5qPOaLNx5zdwv+5x/1FVPiv8H/ucRGVwn+F/3OPi6gU/iv8n3vcf/AK/xX+zz0uolL4r/B/7nH/wSv8V/g/97jwX++AuceF/3OPMwA=');
+	mix-blend-mode: screen;
+	background-size: 240px;
+}
+
+.font-code {
+	font-family: 'Cascadia Code', sans-serif !important;
+}
+
+.hljs-attribute,
+.hljs-function .hljs-title,
+.hljs-section,
+.hljs-title.function_,
+.ruby .hljs-property {
+	color: #feefae !important;
+}

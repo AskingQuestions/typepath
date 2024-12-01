@@ -1,6 +1,6 @@
 {
   "name": "typepath",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "description": "",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -20,6 +20,9 @@
     "test": "npx tsx src/index.test.ts",
     "build": "pkgroll"
   },
+  "files": [
+    "dist"
+  ],
   "author": "Jeremy Frank",
   "license": "ISC",
   "devDependencies": {
@@ -29,11 +32,13 @@
     "babel-jest": "^29.7.0",
     "jest": "^29.7.0",
     "pkgroll": "^2.5.1",
+    "sharp": "^0.33.5",
+    "terminal-image": "^3.0.0",
     "ts-jest": "^29.2.5",
-    "typescript": "^5.7.2",
-    "zod": "^3.23.8"
+    "typescript": "^5.7.2"
   },
   "dependencies": {
+    "zod": "^3.23.8",
     "superjson": "^2.2.1"
   }
 }

@@ -1,0 +1,14 @@
+---
+title: TypePath - Responses - Returning JS Types
+---
+
+<script>
+</script>
+
+# Returning JS Types
+
+TypePath allows you to return JavaScript types from your route handlers. These values (`Date`, `Buffer`, etc) are encoded as JSON with a package called `superjson`.
+
+The `superjson` transforming is automatically applied to the response body when using the typepath client. The client will automatically opt-in by sending an `x-superjson: true` header.
+
+For other clients that don't add the `x-superjson: true` header, the response will be a JSON string.

@@ -1,0 +1,37 @@
+---
+title: TypePath - Responses - Errors
+---
+
+<script>
+</script>
+
+# Throw Errors
+
+You can throw errors in your route handlers to return an error response.
+
+## Example
+
+```ts
+import { status } from "typepath";
+
+const r = router({
+  "/:id": get(({ rawParams: { id } }) => {
+    throw status(404, `Thing with id ${id} not found`);
+  })
+});
+```
+
+## Client side
+
+4xx and 5xx status codes will be thrown as errors on the client side.
+
+```ts
+import type { TypePathStatusError } from "typepath";
+
+try {
+  await r.get("/123");
+} catch (e: TypePathStatusError) {
+  console.log(e.status); // 404
+  console.log(e.message); // "Thing with id 123 not found"
+}
+```

@@ -1,0 +1,24 @@
+---
+title: TypePath - Request Data
+---
+
+<script>
+</script>
+
+# Request Data
+
+You can access the request data in the `ctx` object under `ctx.request`.
+
+## Example
+
+```ts
+const r = router({
+  "/...slug": any((ctx) => ({
+    method: ctx.request.method,
+    url: ctx.request.url,
+    headers: ctx.request.headers,
+  }))
+});
+```
+
+

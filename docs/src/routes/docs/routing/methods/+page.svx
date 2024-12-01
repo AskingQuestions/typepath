@@ -1,0 +1,39 @@
+---
+title: TypePath - Routing - Methods
+---
+
+<script>
+</script>
+
+# Route Methods
+
+TypePath provides the following route methods:
+```ts
+import {
+  get,
+  post,
+  put,
+  patch,
+  delete as del,
+  options,
+  head,
+  any
+} from "typepath";
+```
+
+## Catchall method
+
+```ts
+const r = router({
+  "/": any((ctx) => ctx.request.method)
+});
+```
+
+## Multiple methods on the same route
+
+
+```ts
+const r = router({
+  "/user/:id": [get((ctx) => ctx.params.id), post((ctx) => ctx.params.id)],
+});
+```

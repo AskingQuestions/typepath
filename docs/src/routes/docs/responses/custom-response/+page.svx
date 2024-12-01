@@ -1,0 +1,35 @@
+---
+title: TypePath - Responses - Custom Response
+---
+
+<script>
+</script>
+
+# Custom Response
+
+You can return `Response` objects from your route handlers to customize the response.
+
+## Example
+
+```ts
+const r = router({
+  "/": get(({ rawParams: { id } }) => {
+    return new Response(`Here's some freshly baked text`, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain"
+      }
+    });
+  })
+});
+```
+
+## Client side
+
+The client can't discern if a `Response` object is a custom response or a regular response. For this reason, all `Response` types will be returned as `any` on the client side.
+The actual type of the response can be checked using the `typeof` operator.
+
+```ts
+const response = await r.get("/"); // any
+console.log(typeof response); // "string"
+```

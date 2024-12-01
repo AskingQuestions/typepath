@@ -1,0 +1,40 @@
+---
+title: TypePath - Custom Context
+---
+
+<script>
+</script>
+
+# Custom Context
+
+You can create a custom router function with a custom context object.
+
+## Example
+
+```ts
+export const wsRouter = withContext<{ websocket: WebSocket }>();
+
+const r = wsRouter({
+  "/": (ctx) => ctx.websocket.send("Hello, World!")
+});
+
+// Using direct methods
+wsRouter.get("/", {
+  context: {
+    websocket: new WebSocket("ws://localhost:8080")
+  }
+});
+
+// Using handle
+wsRouter.handle(new Request(...), {
+  context: {
+    websocket: new WebSocket("ws://localhost:8080")
+  }
+});
+```
+
+Note that this overrides the default context object which includes `request`. You can add request back in like so:
+
+```ts
+export const wsRouter = withContext<{ request: Request, websocket: WebSocket }>();
+```

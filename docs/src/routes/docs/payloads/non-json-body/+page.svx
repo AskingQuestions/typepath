@@ -1,0 +1,38 @@
+---
+title: TypePath - Payloads - Non-JSON Body
+---
+
+<script>
+</script>
+
+# Non-JSON Body Data
+
+Sometimes you need to upload images or other binary data. TypePath provides a `rawBody` field that exposes the plain body coming from the request.
+
+## Example
+
+```ts
+const r = router({
+  "/image": post(async (ctx) => {
+    const img = await sharp(ctx.rawBody as Buffer)
+      .resize(100, 100)
+      .toBuffer();
+
+    return new Response(img, {
+        headers: {
+          "Content-Type": "image/png"
+        }
+      });
+  })
+});
+
+const c = client<typeof r>();
+
+const cat = await fetch("https://placecats.com/300/200").then((res) => res.buffer());
+const res = await c.post("/image", cat); // ArrayBuffer
+
+const img = new Image();
+img.src = URL.createObjectURL(new Blob([res], { type: "image/png" }));
+
+document.body.appendChild(img);
+```

@@ -1,0 +1,56 @@
+---
+title: TypePath - Routing - Organization
+---
+
+<script>
+</script>
+
+# Organization
+
+TypePath has a flexible type system that lets you define routes anywhere and combine them using the `router` function.
+
+
+## Example
+
+
+
+```ts
+// auth.ts
+export const auth = {
+  "/login": post((ctx) => {
+    // login logic
+  }),
+  "/logout": post((ctx) => {
+    // logout logic
+  })
+};
+```
+
+```ts
+// articles.ts
+
+export const articles = {
+  "/": get((ctx) => {
+    // get all articles
+  }),
+  "/:id": get((ctx) => {
+    // get article by id
+  }),
+  "/...slug": get((ctx) => {
+    // get article by slug
+  })
+};
+```
+
+```ts
+// index.ts
+
+import { router } from "typepath";
+import { auth } from "./auth";
+import { articles } from "./articles";
+
+const r = router({
+  ...auth,
+  ...articles
+});
+```

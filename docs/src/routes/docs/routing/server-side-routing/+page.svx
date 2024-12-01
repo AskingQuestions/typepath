@@ -1,0 +1,40 @@
+---
+title: TypePath - Routing - Server Side Routing
+---
+
+<script>
+</script>
+
+# Server Side Routing
+
+TypePath lets you call method functions directly on the router object. This is useful for server side routing.
+
+
+## Example
+
+```ts
+const r = router({
+  "/": get((ctx) => {
+    // ...
+  }),
+});
+
+r.get("/", {
+  search: { "q": "hello" },
+});
+```
+
+## Request
+
+```ts
+const r = router({
+  "/": get((ctx) => {
+    // ...
+  }),
+});
+
+let res = await r.handle(new Request(...));
+
+res // Response
+
+```

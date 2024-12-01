@@ -1,0 +1,61 @@
+---
+title: TypePath - Routing - Params
+---
+
+<script>
+</script>
+
+# Route Params
+
+Params are a typesafe way to define dynamic routes. Create them by prefixing a path segment with a colon. For example, `/user/:id` will match `/user/1`, `/user/2`, etc.
+
+## Example
+
+```ts
+const r = router({
+  // ctx will contain a property `id` of type string inside the ctx.rawParams object
+  "/user/:id": get((ctx) => ctx.rawParams.id)
+});
+```
+
+## Validation
+
+You can pass zod schemas to validate the params. If the schema fails, the request will be rejected with a 400 status code.
+```ts
+const r = router({
+  // when using a schema, the ctx.params object will contain the validated params
+  "/user/:id": params({
+    id: z.string().regex(/^\d+$/)
+  }).get((ctx) => ctx.params.id)
+});
+```
+
+## Prioritization
+
+Routes with params are prioritized lower than routes without params. This means that if you have a route `/user/:id` and a route `/user/1`, the `/user/1` route will be matched first.
+
+When routes are ambiguous, the first route defined will be matched first.
+
+### Example
+
+```ts
+const r = router({
+  "/user/:id": get((ctx) => `User with id ${ctx.rawParams.id}`),
+  "/user/me": get((ctx) => "User with id me"), // This route will be checked first
+  "/user/:id/settings": get(...),
+  "/user/me/:arg": get(...)
+});
+```
+
+## Type-safety
+
+TypePath will define overloads for both the raw path `/users/:id` and the template literal path `/users/${string}`. This helps with autocomplete and type-checking.
+
+```ts
+const r = router({
+  "/user/:id": get((ctx) => ctx.rawParams.id)
+});
+
+r.get("/user/1");
+r.get(`/user/${"hello"}`);
+```

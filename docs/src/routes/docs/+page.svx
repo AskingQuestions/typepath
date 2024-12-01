@@ -1,0 +1,52 @@
+---
+title: Getting Started with TypePath
+---
+
+<script>
+</script>
+
+# Getting Started with TypePath
+
+
+TypePath is dead simple to use. Runs anywhere javascript runs, and comes in weighing at just 6kb minified and gzipped. Let's get started with a barebones example.
+
+---
+
+## 1. Installation
+```sh
+$ npm install typepath
+```
+
+
+## 2. Server
+
+```ts
+// server.ts
+
+import { router, get } from 'typepath';
+
+// Create a router
+const r = router({
+  "/": get((ctx) => "Hello, World!")
+});
+
+// Listen on port 3000 using the default node:http server
+r.listen({ port: 3000 });
+
+export type Router = typeof r;
+```
+
+## 3. Client
+
+```ts
+// client.ts
+import { client } from 'typepath';
+import type { Router } from './server';
+
+// Create a client that points to the server
+const c = client<Router>({
+  baseUrl: "http://localhost:3000"
+});
+
+console.log(await c.get("/")); // Hello, World!
+```

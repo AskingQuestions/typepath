@@ -1,0 +1,57 @@
+---
+title: TypePath - Payloads - Guards
+---
+
+<script>
+</script>
+
+# Guards
+
+TypePath encourages you to refrain from defining global middleware for things like authentication and contextual data loading.
+
+Instead, you can opt-in on a per-route basis by wrapping your route handler with a guard or by fetching data directly.
+
+This more explicit way of defining your routes makes it easier to understand what's going on, and helps to keep routes as pure as possible eliminating unnecessary calls.
+
+Rate-limiting, global auth, and other global middleware can still be defined at the handler level if needed.
+
+## Example with Guards
+
+```ts
+import { makeGuard, status } from "typepath";
+
+const withAuth = makeGuard(async (ctx) => {
+  if (!ctx.headers.get("Authorization")) {
+    throw status(401, "Unauthorized");
+  }
+
+  // The return type here is mixed into the context and available in the route handler
+  return { user: ... }; 
+});
+
+const r = router({
+  "/me": get(withAuth((ctx) => ctx.user));
+});
+```
+
+## Example with Data Fetching
+
+```ts
+const withAuth = async (req: Request) => {
+  if (!req.headers.get("Authorization")) {
+    throw status(401, "Unauthorized");
+  }
+
+  return ...;
+};
+
+const r = router({
+  "/me": get(async (ctx) => {
+    const user = await withAuth(ctx.request);
+
+    return user;
+  });
+});
+```
+
+You can also use the custom context features to provide shared user data across all routes if needed. See the [Context](/docs/payloads/custom-context) page for more information.

@@ -1,8 +1,23 @@
-import { type ZodTypeAny, type infer as ZodInfer, z } from "zod";
+import type z from "zod";
+import { type ZodTypeAny, ZodError, ZodObject, z as zod } from "zod";
 import superjson from "superjson";
 
-type ReplaceAllStringsInArray<T extends any[], X> = {
-  [K in keyof T]: T[K] extends string ? X : T[K];
+const isAnyBuffer = (x: any): boolean => {
+  return (
+    x instanceof FormData ||
+    x instanceof URLSearchParams ||
+    x instanceof Blob ||
+    x instanceof ArrayBuffer ||
+    x instanceof ReadableStream ||
+    x instanceof Uint8Array ||
+    x instanceof Uint16Array ||
+    x instanceof Uint32Array ||
+    x instanceof Int8Array ||
+    x instanceof Int16Array ||
+    x instanceof Int32Array ||
+    x instanceof Float32Array ||
+    x instanceof Float64Array
+  );
 };
 
 // Preserve string, number, boolean, null, undefined, object, Date, and Array types
@@ -56,7 +71,16 @@ export type Common = {
   request: Request;
 };
 
-const generateMethods = <Extras>(inject: {}) => ({
+type MethodEnds<Extras> = {
+  [K in Methods | "any"]: <Ctx, T extends any>(
+    handler: (ctx: Ctx & Extras) => T
+  ) => {
+    handler: (ctx: Ctx & Extras) => T;
+    method: K;
+  };
+};
+
+const generateMethods = <Extras>(inject: {}): MethodEnds<Extras> => ({
   get: <Ctx, T extends any>(handler: (ctx: Ctx & Extras) => T) =>
     ({
       handler,
@@ -107,10 +131,22 @@ const generateMethods = <Extras>(inject: {}) => ({
     } as const),
 });
 
-const generateParams = <Extras>(inject: {}) => ({
+type MethodParams<Extras> = {
   params: <
     Schema extends Record<string, ZodTypeAny>,
-    X extends { [K in keyof Schema]: ZodInfer<Schema[K]> }
+    X extends { [K in keyof Schema]: z.infer<Schema[K]> },
+    Extended = { params: X } & Extras
+  >(
+    schema: Schema
+  ) => MethodEnds<Extended> &
+    MethodBody<Extended> &
+    MethodSearchParams<Extended>;
+};
+
+const generateParams = <Extras>(inject: {}): MethodParams<Extras> => ({
+  params: <
+    Schema extends Record<string, ZodTypeAny>,
+    X extends { [K in keyof Schema]: z.infer<Schema[K]> }
   >(
     schema: Schema
   ) => {
@@ -125,10 +161,23 @@ const generateParams = <Extras>(inject: {}) => ({
     };
   },
 });
-const generateSearchParams = <Extras>(inject: {}) => ({
+
+type MethodSearchParams<Extras> = {
   searchParams: <
     Schema extends Record<string, ZodTypeAny>,
-    X extends { [K in keyof Schema]?: ZodInfer<Schema[K]> }
+    X extends { [K in keyof Schema]: z.infer<Schema[K]> },
+    Extended = { search: X } & Extras
+  >(
+    schema: Schema
+  ) => MethodEnds<Extended> & MethodBody<Extended>;
+};
+
+const generateSearchParams = <
+  Extras
+>(inject: {}): MethodSearchParams<Extras> => ({
+  searchParams: <
+    Schema extends Record<string, ZodTypeAny>,
+    X extends z.infer<ZodObject<{ [K in keyof Schema]: Schema[K] }>>
   >(
     schema: Schema
   ) => {
@@ -142,19 +191,29 @@ const generateSearchParams = <Extras>(inject: {}) => ({
     };
   },
 });
-const generateBody = <Extras>(inject: {}) => ({
+
+type MethodBody<Extras> = {
+  body: <Schema extends ZodTypeAny, X extends z.infer<Schema>>(
+    schema: Schema
+  ) => MethodEnds<{ body: X } & Extras>;
+};
+
+const generateBody = <Extras>(inject: {}): MethodBody<Extras> => ({
   body: <Schema extends ZodTypeAny>(schema: Schema) => {
     inject = {
       ...inject,
       body: schema,
     };
     return {
-      ...generateMethods<{ body: ZodInfer<Schema> } & Extras>(inject),
+      ...generateMethods<{ body: z.infer<Schema> } & Extras>(inject),
     };
   },
 });
 
-export const generate = <Extras>(inject: {}) => ({
+export const generate = <Extras>(inject: {}): MethodEnds<Extras> &
+  MethodParams<Extras> &
+  MethodSearchParams<Extras> &
+  MethodBody<Extras> => ({
   ...generateMethods<Extras>(inject),
   ...generateParams<Extras>(inject),
   ...generateSearchParams<Extras>(inject),
@@ -198,6 +257,8 @@ type FilterMethods<Route, M extends Methods> = Route extends Array<any>
     : never
   : never;
 
+type FilterResponse<Rtn> = Rtn extends Response ? any : Rtn;
+
 type GenerateCaller<
   M,
   Path extends string,
@@ -208,7 +269,7 @@ type GenerateCaller<
   IncludeContextOption,
   SearchParamsObject = Ctx extends { searchParams: infer SP }
     ? { search?: SP }
-    : {},
+    : { search?: Record<string, any> },
   ContextObject = IncludeContextOption extends true
     ? { context?: Context }
     : {
@@ -222,35 +283,47 @@ type GenerateCaller<
           opts?: ContextObject &
             (Ctx extends { body: infer B } ? { body: B } : {}) &
             SearchParamsObject
-        ) => WrapWithPromise extends true ? Promise<Rtn> : Rtn)
+        ) => WrapWithPromise extends true
+          ? Promise<FilterResponse<Awaited<Rtn>>>
+          : FilterResponse<Rtn>)
       | ((
           path: ReplaceDynamicSegments<ParseRoute<Path>>,
           opts?: ContextObject &
             (Ctx extends { body: infer B } ? { body: B } : {}) &
             SearchParamsObject
-        ) => WrapWithPromise extends true ? Promise<Rtn> : Rtn)
+        ) => WrapWithPromise extends true
+          ? Promise<FilterResponse<Awaited<Rtn>>>
+          : FilterResponse<Rtn>)
       | ((
           path: `${ReplaceDynamicSegments<ParseRoute<Path>>}?${string}`,
           opts?: ContextObject &
             (Ctx extends { body: infer B } ? { body: B } : {}) &
             SearchParamsObject
-        ) => WrapWithPromise extends true ? Promise<Rtn> : Rtn)
+        ) => WrapWithPromise extends true
+          ? Promise<FilterResponse<Awaited<Rtn>>>
+          : FilterResponse<Rtn>)
   :
       | ((
           path: Path,
           body?: Ctx extends { body: infer B } ? B : {},
           opts?: ContextObject & SearchParamsObject
-        ) => WrapWithPromise extends true ? Promise<Rtn> : Rtn)
+        ) => WrapWithPromise extends true
+          ? Promise<FilterResponse<Awaited<Rtn>>>
+          : FilterResponse<Rtn>)
       | ((
           path: ReplaceDynamicSegments<ParseRoute<Path>>,
           body?: Ctx extends { body: infer B } ? B : {},
           opts?: ContextObject & SearchParamsObject
-        ) => WrapWithPromise extends true ? Promise<Rtn> : Rtn)
+        ) => WrapWithPromise extends true
+          ? Promise<FilterResponse<Awaited<Rtn>>>
+          : FilterResponse<Rtn>)
       | ((
           path: `${ReplaceDynamicSegments<ParseRoute<Path>>}?${string}`,
           body?: Ctx extends { body: infer B } ? B : {},
           opts?: ContextObject & SearchParamsObject
-        ) => WrapWithPromise extends true ? Promise<Rtn> : Rtn);
+        ) => WrapWithPromise extends true
+          ? Promise<FilterResponse<Awaited<Rtn>>>
+          : FilterResponse<Rtn>);
 
 // Generate user-facing overloads
 type CleanOverloads<
@@ -286,26 +359,6 @@ type CleanOverloads<
       : never;
   }>
 >;
-// | Overloads<{
-//     [X in keyof Filtered]: X extends string
-//       ? Filtered[X] extends {
-//           method: infer SM;
-//           handler: infer H;
-//         }
-//         ? SM extends M
-//           ? H extends (ctx: infer Ctx) => infer Rtn
-//             ? (
-//                 path: ReplaceDynamicSegments<ParseRoute<X>>,
-//                 payload?: {
-//                   body?: Ctx extends { body: infer B } ? B : never;
-//                   context?: Extras;
-//                 }
-//               ) => WrapWithPromise extends true ? Promise<Rtn> : Rtn
-//             : never
-//           : never
-//         : never
-//       : never;
-//   }>
 
 type SubOverloads<
   T extends { [K in keyof T]: (...args: any[]) => any },
@@ -328,9 +381,14 @@ type ConvertFromUnionToOverload<T> = UnionToIntersection<
   T extends (...arg: infer A) => infer R ? (...arg: A) => R : never
 >;
 
-type BaseRouterMethods = {
-  handle(req: Request): Promise<Response>;
-  listen(opts?: { port?: number; transformer?: Transformer }): Promise<{
+type BaseRouterMethods<T> = {
+  handle(
+    req: Request,
+    opts?: {
+      context?: T;
+    }
+  ): Promise<Response>;
+  listen(opts?: { port?: number }): Promise<{
     close: () => void;
   }>;
 };
@@ -443,24 +501,16 @@ export function client<
         url.searchParams.append(k, callOpts.search[k]);
       }
 
+      let headers = opts?.headers
+        ? typeof opts.headers == "function"
+          ? await opts.headers()
+          : opts.headers
+        : {};
+
       let encodedBody = null;
       let contentType = null;
 
-      if (
-        body instanceof FormData ||
-        body instanceof URLSearchParams ||
-        body instanceof Blob ||
-        body instanceof ArrayBuffer ||
-        body instanceof ReadableStream ||
-        body instanceof Uint8Array ||
-        body instanceof Uint16Array ||
-        body instanceof Uint32Array ||
-        body instanceof Int8Array ||
-        body instanceof Int16Array ||
-        body instanceof Int32Array ||
-        body instanceof Float32Array ||
-        body instanceof Float64Array
-      ) {
+      if (isAnyBuffer(body)) {
         encodedBody = body;
 
         if (body instanceof FormData) {
@@ -480,12 +530,6 @@ export function client<
         encodedBody = JSON.stringify(body);
         contentType = "application/json";
       }
-
-      let headers = opts?.headers
-        ? typeof opts.headers == "function"
-          ? await opts.headers()
-          : opts.headers
-        : {};
 
       if (callOpts?.headers) {
         headers = {
@@ -513,12 +557,25 @@ export function client<
         ...(encodedBody ? { body: encodedBody } : {}),
         headers: {
           ...(contentType ? { "Content-Type": contentType } : {}),
+          "x-superjson": "true",
           ...headers,
         },
       }).then(async (res) => {
-        const data = await res.text();
-
-        return transformer.parse(data);
+        if (res.status >= 400) {
+          throw new TypePathStatusError(res.status, await res.text());
+        } else {
+          if (res.headers.get("content-type") == "application/octet-stream") {
+            return await res.arrayBuffer();
+          } else if (res.headers.get("content-type") == "application/json") {
+            if (res.headers.get("x-superjson") == "true") {
+              return superjson.parse(await res.text());
+            } else {
+              return await res.json();
+            }
+          } else {
+            return await res.arrayBuffer();
+          }
+        }
       });
     };
   };
@@ -540,15 +597,14 @@ export function client<
   };
 }
 
+type RouterOutput<Context, Routes extends CommonRoutes<Routes, Context>> = {
+  [K in Methods]: CleanOverloads<Context, K, Routes, false, true>;
+} & { routeDefinition: Routes } & BaseRouterMethods<Context>;
+
 function routerInternal<
   Context extends {},
   Routes extends CommonRoutes<Routes, Context>
->(
-  routes: Routes,
-  context: () => Context
-): {
-  [K in Methods]: CleanOverloads<Context, K, Routes, false, true>;
-} & { routeDefinition: Routes } & BaseRouterMethods {
+>(routes: Routes, context: () => Context): RouterOutput<Context, Routes> {
   const extractRoutes = (m: Methods) => {
     const list: {
       path: string;
@@ -604,6 +660,17 @@ function routerInternal<
       let pointer = trie;
       if (item.path == "/" || item.path == "") {
         pointer.handler = item.handler;
+        pointer.parsers = {};
+
+        if (item.searchParams) {
+          pointer.parsers.searchParams = item.searchParams;
+        }
+        if (item.params) {
+          pointer.parsers.params = item.params;
+        }
+        if (item.body) {
+          pointer.parsers.body = item.body;
+        }
         continue;
       }
 
@@ -784,10 +851,7 @@ function routerInternal<
 
       let parsedSearch: Record<string, any> | null = null;
       if (parsers?.searchParams) {
-        parsedSearch = {};
-        for (let k of Object.keys(parsers.searchParams)) {
-          parsedSearch[k] = parsers.searchParams[k].parse(search[k]);
-        }
+        parsedSearch = zod.object(parsers.searchParams).parse(search);
       }
 
       const ctx = {
@@ -814,7 +878,12 @@ function routerInternal<
     head: generateMethodHandler("head"),
   };
 
-  const handle = async (req: Request) => {
+  const handle = async (
+    req: Request,
+    opts?: {
+      context?: Context;
+    }
+  ) => {
     const url = new URL(req.url, "http://localhost");
     const method = req.method.toLowerCase() as Methods;
 
@@ -861,10 +930,7 @@ function routerInternal<
 
     let parsedSearch: Record<string, any> | null = null;
     if (parsers?.searchParams) {
-      parsedSearch = {};
-      for (let k of Object.keys(parsers.searchParams)) {
-        parsedSearch[k] = parsers.searchParams[k].parse(search[k]);
-      }
+      parsedSearch = zod.object(parsers.searchParams).parse(search);
     }
 
     const ctx = {
@@ -872,20 +938,56 @@ function routerInternal<
       rawSearch: search,
       rawBody,
       request: req,
+      ...(opts?.context ?? {}),
       ...(parsedBody ? { body: parsedBody } : {}),
       ...(parsedParams ? { params: parsedParams } : {}),
       ...(parsedSearch ? { search: parsedSearch } : {}),
     };
+    try {
+      const output = await handler(ctx);
 
-    return handler(ctx);
+      if (output instanceof Response) {
+        return output;
+      } else if (isAnyBuffer(output)) {
+        return new Response(output, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/octet-stream",
+          },
+        });
+      } else {
+        const useSuper = req.headers.get("x-superjson") == "true";
+        return new Response(
+          useSuper ? superjson.stringify(output) : JSON.stringify(output),
+          {
+            status: 200,
+            headers: {
+              ...(useSuper ? { "x-superjson": "true" } : {}),
+              "Content-Type": "application/json",
+            },
+          }
+        );
+      }
+    } catch (e) {
+      if (e instanceof TypePathStatusError) {
+        return new Response(e.message, { status: e.status });
+      } else if (e instanceof ZodError) {
+        return new Response(e.toString(), { status: 400 });
+      } else {
+        console.error("Received while handling", path, e);
+        return new Response("Internal server error", { status: 500 });
+      }
+    }
+
+    // Translate the output to a response
   };
 
   return {
     routeDefinition: routes,
     ...methods,
     handle,
-    listen: async (opts?: { port?: number; transformer?: Transformer }) => {
-      const { port = 8080, transformer = superjson } = opts ?? {};
+    listen: async (opts?: { port?: number }) => {
+      const { port = 8080 } = opts ?? {};
 
       const http = await import("http");
       const server = http.createServer(async (incomingMessage, res) => {
@@ -896,9 +998,7 @@ function routerInternal<
         const body = await new Promise((resolve, reject) => {
           let body: any[] = [];
           incomingMessage.on("data", (chunk) => body.push(chunk));
-          incomingMessage.on("end", () =>
-            resolve(Buffer.concat(body).toString())
-          );
+          incomingMessage.on("end", () => resolve(Buffer.concat(body)));
           incomingMessage.on("error", reject);
         });
         const headers = new Headers();
@@ -909,19 +1009,40 @@ function routerInternal<
         const req = new Request(url, {
           method,
           headers,
-          body: methodCanHaveBody(method ?? "GET") ? body : undefined,
+          body: methodCanHaveBody(method ?? "GET") ? body : (undefined as any),
         });
         handle(req)
-          .then((result) => {
-            res.end(transformer.stringify(result));
+          .then(async (result) => {
+            res.statusCode = result.status;
+            res.setHeaders(result.headers);
+            // Stream a Response.body to res
+            const reader = result.body?.getReader();
+            if (reader) {
+              const pump = async () => {
+                const { done, value } = await reader.read();
+                if (done) {
+                  res.end();
+                  return;
+                }
+                res.write(value);
+                await pump();
+              };
+              await pump();
+            } else {
+              res.end(await result.text());
+            }
           })
           .catch((e) => {
             if (e instanceof TypePathStatusError) {
               res.statusCode = e.status;
               res.end(e.message);
+            } else if (e instanceof ZodError) {
+              res.statusCode = 400;
+              res.end(e.toString());
             } else {
+              console.error("Error while handling request", e);
               res.statusCode = 500;
-              res.end(e.message);
+              res.end("Internal server error");
             }
           });
       });
@@ -953,13 +1074,29 @@ function routerInternal<
 export const withContext =
   <Context extends {}>() =>
   <Routes extends CommonRoutes<Routes, Context>>(routes: Routes) =>
-    routerInternal(routes, (): Context => null as any);
+    routerInternal(routes, (): Context => null as any) as RouterOutput<
+      Context,
+      Routes
+    >;
 
+/**
+ * Create a router
+ *
+ * ```ts
+ * import { router, get } from "typepath";
+ *
+ * const r = router({
+ *   "/": get(() => "hello"),
+ * });
+ *
+ * r.get("/");
+ * ```
+ */
 export const router = withContext<{
   request: Request;
 }>();
 
-class TypePathStatusError extends Error {
+export class TypePathStatusError extends Error {
   constructor(public status: number, public message: string) {
     super(message);
   }
@@ -1035,6 +1172,50 @@ export const makeGuard = <
   };
 };
 
+export type ExtractRouterRoutes<Router extends RouterOutput<any, any>> =
+  Router extends RouterOutput<any, infer R> ? keyof R : never;
+
+export type ExtractRouterRoutesWithMethod<
+  Router extends RouterOutput<any, any>,
+  Method extends Methods
+> = Router extends RouterOutput<any, infer R>
+  ? {
+      [K in keyof R]: R[K] extends { method: Method } ? K : never;
+    }[keyof R]
+  : never;
+
+export type ExtractRouterRouteHandler<
+  Router extends RouterOutput<any, any>,
+  Method extends Methods,
+  Path extends ExtractRouterRoutes<Router>,
+  Filtered = Router extends RouterOutput<any, infer R>
+    ? {
+        [K in keyof R]: FilterMethods<R[K], Method>;
+      }
+    : never
+> = Filtered extends { [K in Path]: infer X } ? X : never;
+
+export type ExtractRouteBody<
+  Router extends RouterOutput<any, any>,
+  Method extends Methods,
+  Path extends ExtractRouterRoutes<Router>
+> = ExtractRouterRouteHandler<Router, Method, Path> extends {
+  ctx: { body: infer B };
+}
+  ? B
+  : never;
+
+export type ExtractRouteParams<
+  Router extends RouterOutput<any, any>,
+  Method extends Methods,
+  Path extends ExtractRouterRoutes<Router>,
+  Extracted = ExtractRouterRouteHandler<Router, Method, Path>
+> = Extracted extends {
+  ctx: { params: infer P };
+}
+  ? P
+  : ParamsFromRoute<ParseRoute<Path>>;
+
 // Tests
 () => {
   type TypeAssert<T, Expected> = T extends Expected ? true : false;
@@ -1069,18 +1250,27 @@ export const makeGuard = <
 
   const r = router({
     "/test/:id": searchParams({
-      limit: z.number().max(100).min(1).default(10).optional(),
-      page: z.number().min(0).optional(),
+      limit: zod.number().max(100).min(1).default(10).optional(),
+      page: zod.number().min(0).optional(),
     }).get((ctx) => "/test/:id" as const),
     "/test2/:id": body(
-      z.object({
-        name: z.string(),
+      zod.object({
+        name: zod.string(),
       })
     ).post((ctx) => "/test2/:id" as const),
+    "/add/:num": params({
+      num: zod.coerce.number(),
+    }).get((ctx) => "/add/:num" as const),
     "/hi/:abc": [get((ctx) => "/hi/:abc" as const), post(() => false)],
     "/list": get((ctx) => 1),
     "/any": any((ctx) => 1),
+    "/response": get((ctx) => new Response("hi")),
   });
+
+  type Ms = ExtractRouterRoutesWithMethod<typeof r, "get">;
+  type XX = ExtractRouteParams<typeof r, "get", "/add/:num">;
+  type XX2 = ExtractRouterRouteHandler<typeof r, "get", "/hi/:abc">;
+  type XX3 = ExtractRouteBody<typeof r, "post", "/test2/:id">;
 
   const c = client<typeof r>();
   let x = c.get("/hi/:abc");
@@ -1089,6 +1279,7 @@ export const makeGuard = <
   const res3 = r.post(`/test2/${1234}`, { name: "a" });
   const res4 = r.post("/hi/:abc");
   const res5 = r.head("/any");
+  const res6 = r.get("/response");
 
   r.get("/list?abc=12q3");
 
@@ -1098,4 +1289,5 @@ export const makeGuard = <
   const testRes4: TypeAssert<typeof res4, false> = true;
   const testRes5: TypeAssert<typeof res5, number> = true;
   const testX: TypeAssert<typeof x, Promise<"/hi/:abc">> = true;
+  const testRes6: TypeAssert<typeof res6, any> = true;
 };

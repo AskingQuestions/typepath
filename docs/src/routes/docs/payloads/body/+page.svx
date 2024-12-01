@@ -1,0 +1,31 @@
+---
+title: TypePath - Payloads - Data
+---
+
+<script>
+</script>
+
+# Body Data
+
+Body data can be anything, but it's usually JSON. TypePath provides a simple `body` function that lets you parse json data from the request body or function call payload.
+
+## Example
+
+```ts
+const r = router({
+  "/blog": body(z.object({
+    title: z.string(),
+    content: z.string()
+  })).post((ctx) => ctx.body.title)
+});
+```
+
+## rawBody
+
+The raw body object is also available via `ctx.rawBody`
+```ts
+const r = router({
+  "/blog": post((ctx) => ctx.rawBody)
+});
+```
+

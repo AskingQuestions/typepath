@@ -6,8 +6,10 @@ globalThis.console = new console.Console({
   stderr: process.stderr,
 });
 
+import sharp from "sharp";
+import terminalImage from "terminal-image";
 import test from "node:test";
-import { equal, throws } from "node:assert";
+import { deepEqual, equal, throws } from "node:assert";
 import {
   body,
   client,
@@ -15,6 +17,7 @@ import {
   makeGuard,
   params,
   post,
+  put,
   router,
   searchParams,
 } from "./index";
@@ -79,11 +82,17 @@ test("params", (t) => {
 test("search", (t) => {
   const r = router({
     "/search": searchParams({
-      q: z.string(),
+      q: z.string().optional(),
     }).get((ctx) => ctx.search.q),
+    "/list": searchParams({
+      limit: z.coerce.number().min(1).max(100).default(10),
+    }).get((ctx) => ctx.search.limit),
   });
 
   equal(r.get("/search?q=test"), "test");
+  equal(r.get("/list"), 10);
+  equal(r.get("/list?limit=20"), 20);
+  throws(() => r.get("/list?limit=0"));
 });
 
 test("guard", async (t) => {
@@ -172,6 +181,23 @@ test("binary", async (t) => {
 
       return false;
     }),
+    "/image": put((ctx) => {
+      return sharp(ctx.rawBody as Buffer)
+        .resize(100, 100)
+        .toBuffer();
+    }),
+    "/image/resp": put(async (ctx) => {
+      return new Response(
+        await sharp(ctx.rawBody as Buffer)
+          .resize(100, 100)
+          .toBuffer(),
+        {
+          headers: {
+            "Content-Type": "image/jpeg",
+          },
+        }
+      );
+    }),
   });
 
   const server = await app.listen({ port: 8082 });
@@ -182,6 +208,33 @@ test("binary", async (t) => {
 
     equal(await c.post("/", new Uint8Array([1])), true);
     equal(app.post("/", new Uint8Array([1]).buffer), true);
+
+    const catImage = fetch(
+      "https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg"
+    );
+    const catImageBuffer = await (await catImage).arrayBuffer();
+    const resizedImage = await c.put("/image", catImageBuffer);
+    const correctFirst10 = [
+      0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x06, 0x04, 0x05,
+    ];
+    deepEqual(
+      Array.from(new Uint8Array(resizedImage).slice(0, 10)),
+      correctFirst10
+    );
+    console.log(await terminalImage.buffer(new Uint8Array(resizedImage)));
+
+    const resizedImageResp = await c.put("/image/resp", catImageBuffer);
+
+    deepEqual(
+      Array.from(new Uint8Array(resizedImageResp).slice(0, 10)),
+      correctFirst10
+    );
+
+    const resizedApp = await app.put("/image", catImageBuffer);
+    deepEqual(
+      Array.from(new Uint8Array(resizedApp).slice(0, 10)),
+      correctFirst10
+    );
   } catch (e) {
     throw e;
   } finally {

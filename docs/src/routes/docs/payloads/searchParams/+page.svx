@@ -1,0 +1,32 @@
+---
+title: TypePath - Payloads - Search Params
+---
+
+<script>
+</script>
+
+# Search Params
+
+Search params can be defined via the `searchParams` function. searchParams aren't type-safe in the url at the moment but will be in the future.
+
+## Example
+
+```ts
+const r = router({
+  // ctx will contain a `limit` property inside the ctx.search object
+  "/list": searchParams({
+    limit: z.coerce.number().min(1).max(100).default(10),
+  }).get((ctx) => ctx.search.limit)
+});
+```
+
+The `z.coerce` function is used to coerce the value to a number. This is because search params are always strings.
+
+## rawSearch
+
+All search params are also available in the `rawSearch` object. This object contains the raw search params as strings.
+```ts
+const r = router({
+  "/list": get((ctx) => ctx.rawSearch)
+});
+```
